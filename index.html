@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Printer, FileText, Calculator, CheckSquare } from 'lucide-react';
+import { Plus, Trash2, Printer, FileText, Calculator, CheckSquare, Clock } from 'lucide-react';
 
 export default function App() {
   // --- State Management ---
@@ -7,7 +7,7 @@ export default function App() {
     crop: '',
     name: '',
     goal: '',
-    planTask: '',
+    planTask: '', // 自動反映されるが、手動修正も可能
     planMonthStart: '',
     planMonthEnd: '',
     planFreqType: '', // daily, weekly, single
@@ -23,13 +23,13 @@ export default function App() {
   ]);
 
   // 作業リストが変更されたら「依頼」にチェックが入っているものを抽出して「外注計画」に反映
+  // ※ユーザーが手動で書き換えたい場合もあるため、チェックが一つでもある場合のみ上書きするロジックにしています
   useEffect(() => {
-    const requestedTaskNames = tasks
-      .filter(t => t.isRequest)
-      .map(t => t.name)
-      .join('、');
-    
-    setMeta(prev => ({ ...prev, planTask: requestedTaskNames }));
+    const requestedTasks = tasks.filter(t => t.isRequest);
+    if (requestedTasks.length > 0) {
+      const requestedTaskNames = requestedTasks.map(t => t.name).join('、');
+      setMeta(prev => ({ ...prev, planTask: requestedTaskNames }));
+    }
   }, [tasks]);
 
   // 新しい行を追加
@@ -261,7 +261,7 @@ export default function App() {
                     </button>
                   <div className="mb-3 pr-8">
                     <div className="flex items-center gap-2 mb-1">
-                      <label className="flex items-center gap-1 cursor-pointer bg-white px-2 py-1 rounded border border-green-200">
+                      <label className="flex items-center gap-1 cursor-pointer bg-white px-2 py-1 rounded border border-green-200 shadow-sm">
                         <input 
                           type="checkbox" 
                           checked={task.isRequest} 
@@ -358,7 +358,7 @@ export default function App() {
                   <label className="text-xs font-bold text-gray-700 block mb-2">依頼する作業・時期・時間</label>
                   <div className="space-y-3">
                     <div>
-                        <span className="text-xs text-gray-500 mb-1 block">作業名 (上のリストでチェックすると自動反映されます)</span>
+                        <span className="text-xs text-gray-500 mb-1 block">作業名 (上のリストで「依頼」チェックを付けると自動反映されます)</span>
                         <input 
                         className="w-full border p-2 text-sm rounded bg-white" placeholder="作業名"
                         value={meta.planTask} onChange={(e) => updateMeta('planTask', e.target.value)}
@@ -371,6 +371,7 @@ export default function App() {
                         <input type="number" className="w-12 border p-1 rounded bg-white" value={meta.planMonthEnd} onChange={(e)=>updateMeta('planMonthEnd', e.target.value)}/>月
                       </div>
                       <div className="flex items-center gap-2">
+                        <Clock size={16} className="text-gray-500"/>
                         <span className="text-xs font-bold">時間帯:</span>
                         <input type="time" className="border p-1 rounded bg-white" value={meta.planTimeStart} onChange={(e)=>updateMeta('planTimeStart', e.target.value)}/> ～ 
                         <input type="time" className="border p-1 rounded bg-white" value={meta.planTimeEnd} onChange={(e)=>updateMeta('planTimeEnd', e.target.value)}/>
@@ -417,6 +418,9 @@ export default function App() {
             .print-bg-gray { background-color: #f3f4f6 !important; }
             .print-bg-hint { background-color: #f0fdf4 !important; }
             .print-bg-check { background-color: #f0fdf4 !important; }
+            /* 印刷時にチェックボックスの見た目を整える */
+            input[type="checkbox"] { border: 1px solid #333; -webkit-appearance: none; appearance: none; width: 10px; height: 10px; display: inline-block; }
+            input[type="checkbox"]:checked { background-color: #333; }
           }
         `}</style>
 
@@ -497,7 +501,7 @@ export default function App() {
                                 {calculateCost(task.wage, task.amount) ? `¥${calculateCost(task.wage, task.amount)}` : ''}
                             </td>
                             <td className="border border-black text-sm">{getJudgment(task)}</td>
-                            <td className="border border-black text-lg print-bg-check">{task.isRequest ? '✔' : ''}</td>
+                            <td className="border border-black text-lg print-bg-check font-bold">{task.isRequest ? '✔' : ''}</td>
                           </tr>
                         ))}
                         {/* 空行の補充 (印刷時に見栄え良くするため、最低10行確保) */}
