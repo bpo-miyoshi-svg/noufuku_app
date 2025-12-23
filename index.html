@@ -71,7 +71,9 @@
                 planFreqCount: '',
                 planTimeStart: '',
                 planTimeEnd: '',
+                planAmount: '', // 依頼作業量
                 targetPrice: '',
+                targetUnit: '円',
                 savedHours: ''
             });
 
@@ -79,13 +81,47 @@
                 { id: 1, name: '（例）枝豆の袋詰め・計量', isRepro: true, isSimple: true, isSafe: true, isValue: true, worker: '園主', wage: 2500, amount: 50, unit: '袋', isRequest: false }
             ]);
 
+            // 1. 作業リストが変更されたら「依頼」にチェックが入っているものを抽出して「外注計画」に反映
+            // 2. 「依頼」チェックが入った作業の単価を「目標単価」に自動反映
             useEffect(() => {
                 const requestedTasks = tasks.filter(t => t.isRequest);
                 if (requestedTasks.length > 0) {
-                const requestedTaskNames = requestedTasks.map(t => t.name).join('、');
-                setMeta(prev => ({ ...prev, planTask: requestedTaskNames }));
+                    const requestedTaskNames = requestedTasks.map(t => t.name).join('、');
+                    
+                    // 最新の選択されたタスクの計算単価を取得
+                    const lastReqTask = requestedTasks[requestedTasks.length - 1];
+                    let autoPrice = meta.targetPrice;
+                    let autoUnit = meta.targetUnit;
+                    
+                    if (lastReqTask.wage && lastReqTask.amount && lastReqTask.amount > 0) {
+                        autoPrice = Math.round(lastReqTask.wage / lastReqTask.amount);
+                        autoUnit = `円/${lastReqTask.unit || '個'}`;
+                    }
+
+                    setMeta(prev => ({ 
+                        ...prev, 
+                        planTask: requestedTaskNames,
+                        targetPrice: autoPrice, // 自動反映
+                        targetUnit: autoUnit
+                    }));
                 }
             }, [tasks]);
+
+            // 3. 創出時間の自動計算 (依頼作業量 × 単価 ÷ 依頼する作業の作業者時給)
+            useEffect(() => {
+                const requestedTask = tasks.find(t => t.isRequest);
+                if (requestedTask && meta.planAmount && meta.targetPrice && requestedTask.wage) {
+                    // 計算式: 依頼作業量(個) * 単価(円/個) = 総コスト(円)
+                    // 総コスト(円) / 作業者時給(円/時) = 時間
+                    const totalCost = Number(meta.planAmount) * Number(meta.targetPrice);
+                    const hours = totalCost / Number(requestedTask.wage);
+                    
+                    if (!isNaN(hours) && isFinite(hours)) {
+                         setMeta(prev => ({ ...prev, savedHours: hours.toFixed(1) }));
+                    }
+                }
+            }, [meta.planAmount, meta.targetPrice, tasks]);
+
 
             const addTask = () => {
                 const newId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
@@ -260,9 +296,10 @@
                         <div className="bg-green-50 p-3 rounded border border-green-200">
                             <label className="text-xs font-bold text-green-800 block mb-2">目標と期待効果</label>
                             <div className="space-y-3">
-                            <div className="flex items-center gap-2"><span className="text-sm">目標単価:</span><input type="number" className="w-24 border p-1 rounded text-right bg-white" placeholder="0" value={meta.targetPrice} onChange={(e)=>updateMeta('targetPrice', e.target.value)}/><span className="text-xs text-gray-500">円/個</span></div>
-                            <div className="flex items-center gap-2"><span className="text-sm">創出時間: 月間</span><input type="number" className="w-20 border p-1 rounded text-right font-bold text-green-700 bg-white" placeholder="0" value={meta.savedHours} onChange={(e)=>updateMeta('savedHours', e.target.value)}/><span className="text-sm">時間</span></div>
-                            <p className="text-[10px] text-green-700 font-bold mt-2">→ この時間を、経営目標の達成に使います。</p>
+                            <div className="flex items-center gap-2"><span className="text-sm font-bold text-gray-700">目標単価:</span><input type="number" className="w-24 border p-1 rounded text-right bg-white font-bold text-green-800" placeholder="0" value={meta.targetPrice} onChange={(e)=>updateMeta('targetPrice', e.target.value)}/><input type="text" className="w-16 border p-1 rounded text-center text-xs bg-white" value={meta.targetUnit} onChange={(e)=>updateMeta('targetUnit', e.target.value)}/> <span className="text-[10px] text-gray-500">※自動反映/修正可</span></div>
+                            <div className="flex items-center gap-2"><span className="text-sm font-bold text-gray-700">依頼作業量:</span><input type="number" className="w-24 border p-1 rounded text-right bg-white" placeholder="全体量" value={meta.planAmount} onChange={(e)=>updateMeta('planAmount', e.target.value)}/><span className="text-xs text-gray-500">個/kg等</span></div>
+                            <div className="flex items-center gap-2 pt-2 border-t border-green-200"><span className="text-sm font-bold text-gray-700">創出時間:</span><input type="number" className="w-20 border p-1 rounded text-right font-bold text-green-700 bg-white" placeholder="0" value={meta.savedHours} readOnly /><span className="text-sm">時間 /月</span></div>
+                            <p className="text-[10px] text-green-700 font-bold mt-1">※ (依頼作業量 × 単価) ÷ 作業者時給 で算出</p>
                             </div>
                         </div>
                         </div>
@@ -281,10 +318,12 @@
                     </div>
                     <div className="border-2 border-dashed border-green-700 p-2 mb-2 text-xs"><strong>【目的】</strong> 作業を細かく分解（MECE）し、経営者の高価な時間を「誰でもできる単純作業」に使っていないか、数値で確認しましょう。</div>
                     <div className="flex gap-4">
-                        <div className="w-1/4">
+                        {/* 幅を縮小 (w-1/4 -> w-[16%]) */}
+                        <div className="w-[16%]">
                             <table className="w-full border-collapse border border-black h-full"><thead><tr><th className="print-bg-gray border border-black py-1 text-xs">外注可否の判定基準</th></tr></thead><tbody className="text-[9px]"><tr><td className="print-bg-hint p-2 align-top h-full border border-black"><p className="mb-1 font-bold">● 再現性</p><p className="mb-2 text-gray-600">誰がやっても同じ結果になるか？</p><p className="mb-1 font-bold">● 判断不要</p><p className="mb-2 text-gray-600">迷いや長年の勘が不要か？</p><p className="mb-1 font-bold">● 安全</p><p className="mb-2 text-gray-600">危険な機械や刃物を使わないか？</p><p className="mb-1 font-bold">● 人手価値</p><p className="text-gray-600">数でこなすことで価値が出るか？</p></td></tr></tbody></table>
                         </div>
-                        <div className="w-3/4">
+                        {/* 幅を拡大 */}
+                        <div className="w-[84%]">
                             <table className="w-full border-collapse border border-black text-center">
                                 <thead>
                                     <tr className="print-bg-gray text-[10px]"><th rowSpan="2" className="border border-black w-3/12 py-2">作業工程を細かく記入</th><th colSpan="4" className="border border-black py-1">適性チェック</th><th colSpan="4" className="border border-black py-1">現在のコスト「見える化」</th><th rowSpan="2" className="border border-black w-8 bg-green-100">外注<br/>可否</th><th rowSpan="2" className="border border-black w-8 print-bg-check">依頼</th></tr>
@@ -297,7 +336,14 @@
                             </table>
                             <div className="mt-4 grid grid-cols-2 gap-4">
                                 <div className="border-2 border-gray-800 p-2 text-[10px]"><div className="bg-gray-800 text-white font-bold p-1 mb-2 text-center">外注計画</div><div className="mb-2">作業名：<span className="font-bold ml-2 text-sm">{meta.planTask}</span></div><div className="mb-2">時期： <span className="font-bold mx-1">{meta.planMonthStart}</span>月 ～ <span className="font-bold mx-1">{meta.planMonthEnd}</span>月<span className="ml-4">時間： <span className="font-bold">{meta.planTimeStart}</span> ～ <span className="font-bold">{meta.planTimeEnd}</span></span></div><div className="flex gap-2"><span>頻度：</span><span className={meta.planFreqType === 'daily' ? 'font-bold underline' : ''}>□毎日</span><span className={meta.planFreqType === 'weekly' ? 'font-bold underline' : ''}>□週({meta.planFreqCount})回</span><span className={meta.planFreqType === 'single' ? 'font-bold underline' : ''}>□単発</span></div></div>
-                                <div className="border-2 border-green-800 p-2 bg-green-50 text-[10px]"><div className="bg-green-800 text-white font-bold p-1 mb-2 text-center">目標と期待効果</div><div className="mb-2">目標支払単価：<span className="font-bold text-sm ml-2">{meta.targetPrice}</span> 円</div><div className="mb-1">創出時間：月間 <span className="font-bold text-sm ml-2">{meta.savedHours}</span> 時間</div><p className="text-green-800 font-bold mt-1">→ 経営目標達成のために活用します。</p></div>
+                                <div className="border-2 border-green-800 p-2 bg-green-50 text-[10px]"><div className="bg-green-800 text-white font-bold p-1 mb-2 text-center">目標と期待効果</div>
+                                    <div className="flex gap-4 mb-2">
+                                        <div>目標支払単価：<span className="font-bold text-sm ml-2">{meta.targetPrice}</span> {meta.targetUnit}</div>
+                                        <div>依頼作業量：<span className="font-bold text-sm ml-2">{meta.planAmount}</span></div>
+                                    </div>
+                                    <div className="mb-1">創出時間：月間 <span className="font-bold text-sm ml-2">{meta.savedHours}</span> 時間</div>
+                                    <p className="text-green-800 font-bold mt-1">→ 経営目標達成のために活用します。</p>
+                                </div>
                             </div>
                         </div>
                     </div>
